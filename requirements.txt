@@ -1,0 +1,5 @@
+streamlist
+yfinance
+pandas
+scikit-learn
+plotly
