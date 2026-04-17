@@ -60,7 +60,7 @@ period = st.sidebar.selectbox("回歸長度", ["3y", "5y", "10y"], index=1)
 scan_btn = st.sidebar.button("🚀 啟動百大價值掃描")
 
 # --- 5. 主畫面展示 ---
-st.title("🏹 台股百大五線譜戰情室")
+st.title("🏹 台股百大五線譜分析與選股 by L.C.")
 
 p_data = download_stock_data(STOCKS[selected_label], period)
 
