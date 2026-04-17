@@ -59,7 +59,7 @@ def analyze_stock(symbol, period):
     return p, trend, std
 
 # --- 主畫面顯示 ---
-st.title(f"📊 {selected_label} 五線譜報告")
+st.title(f"📊 {selected_label} 的五線譜圖 by L.C.")
 data = analyze_stock(STOCKS[selected_label], period)
 
 if data:
