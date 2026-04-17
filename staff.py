@@ -6,7 +6,7 @@ from sklearn.linear_model import LinearRegression
 import plotly.graph_objects as go
 
 # --- 頁面配置 ---
-st.set_page_config(page_title="台股50強五線譜分析", layout="wide")
+st.set_page_config(page_title="台股50強五線譜 by L.C.", layout="wide")
 
 # --- 完整 50 檔名單 ---
 STOCKS = {
