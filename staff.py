@@ -3,12 +3,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
-# --- 1. 頁面配置 ---
+# --- 頁面配置 ---
 st.set_page_config(page_title="台股50強五線譜分析", layout="wide")
 
-# --- 2. 完整 50 檔名單 ---
+# --- 完整 50 檔名單 ---
 STOCKS = {
     '2330 台積電': '2330.TW', '2317 鴻海': '2317.TW', '2454 聯發科': '2454.TW', 
     '2308 台達電': '2308.TW', '3711 日月光': '3711.TW', '2891 中信金': '2891.TW', 
@@ -29,87 +29,104 @@ STOCKS = {
     '1402 遠東新': '1402.TW', '2301 光寶科': '2301.TW'
 }
 
-# --- 3. 側邊控制 ---
+# --- 側邊選單 ---
 st.sidebar.title("🛠 控制面板")
-selected_label = st.sidebar.selectbox("選擇股票", list(STOCKS.keys()))
+selected_label = st.sidebar.selectbox("請選擇股票", list(STOCKS.keys()))
 period = st.sidebar.selectbox("回歸長度", ["3y", "5y", "10y"], index=1)
-scan_btn = st.sidebar.button("🚀 執行全自動掃描")
+scan_btn = st.sidebar.button("🚀 執行全自動選股掃描")
 
-# --- 4. 主畫面分析 ---
-st.title(f"📊 {selected_label} 數據簡報")
-
-try:
-    # 獲取數據
-    df = yf.download(STOCKS[selected_label], period=period, auto_adjust=True, progress=False)
+# --- 計算函數 ---
+def analyze_stock(symbol, period):
+    # 使用 auto_adjust=True 確保取得調整後收盤價
+    df = yf.download(symbol, period=period, auto_adjust=True, progress=False)
+    if df.empty: 
+        return None
     
-    if not df.empty:
-        # 核心修正：強制選取 Close 並轉換為單一維度
-        if isinstance(df.columns, pd.MultiIndex):
-            p = df['Close'][STOCKS[selected_label]].dropna()
-        else:
-            p = df['Close'].dropna()
-            
-        y = p.values.reshape(-1, 1)
-        x = np.arange(len(y)).reshape(-1, 1)
-        
-        # 計算回歸
-        model = LinearRegression().fit(x, y)
-        trend = model.predict(x).flatten()
-        std = np.std(y.flatten() - trend)
-        
-        # 取得最後一個純量數值 (避免陣列報錯)
-        last_price = float(p.iloc[-1])
-        last_trend = float(trend[-1])
-        z = (last_price - last_trend) / std
-        
-        # 顯示指標
-        m1, m2, m3 = st.columns(3)
-        m1.metric("目前股價", f"{last_price:.2f}")
-        m2.metric("偏離度 (SD)", f"{z:.2f}")
-        
-        status = "🔥 極度便宜" if z < -2 else "📉 偏低" if z < -1 else "🚀 極度昂貴" if z > 2 else "⚖️ 合理"
-        m3.subheader(status)
-
-        # 繪圖 (Matplotlib)
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(p.index, y, label="價格", color="#333333", alpha=0.7)
-        ax.plot(p.index, trend, label="趨勢線", color="green", linewidth=2)
-        ax.plot(p.index, trend + 2*std, '--', color="red", label="+2SD")
-        ax.plot(p.index, trend - 2*std, '--', color="purple", label="-2SD")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
+    # 修正：確保提取的是單一維度的 Series
+    if isinstance(df.columns, pd.MultiIndex):
+        p = df['Close'][symbol]
     else:
-        st.error("無法取得該股票數據。")
+        p = df['Close']
+        
+    p = p.dropna()
+    y = p.values.reshape(-1, 1)
+    x = np.arange(len(y)).reshape(-1, 1)
+    
+    model = LinearRegression().fit(x, y)
+    trend = model.predict(x).flatten()
+    std = np.std(y.flatten() - trend)
+    
+    return p, trend, std
 
-except Exception as e:
-    st.error(f"發生錯誤: {e}")
+# --- 主畫面顯示 ---
+st.title(f"📊 {selected_label} 五線譜報告")
+data = analyze_stock(STOCKS[selected_label], period)
 
-# --- 5. 掃描功能 ---
+if data:
+    p, trend, std = data
+    # 修正：強制轉換為標量 float
+    curr_p = float(p.iloc[-1])
+    curr_trend = float(trend[-1])
+    z = (curr_p - curr_trend) / std
+    
+    # 顯示指標卡
+    m1, m2 = st.columns(2)
+    m1.metric("目前股價", f"{curr_p:.2f}")
+    m2.metric("偏離度 (SD)", f"{z:.2f}")
+
+    # Plotly 互動圖表
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=p.index, y=p, name="價格", line=dict(color='#333333')))
+    fig.add_trace(go.Scatter(x=p.index, y=trend, name="中線", line=dict(color='green')))
+    fig.add_trace(go.Scatter(x=p.index, y=trend+2*std, name="+2SD (極度樂觀)", line=dict(dash='dash', color='red')))
+    fig.add_trace(go.Scatter(x=p.index, y=trend-2*std, name="-2SD (極度悲觀)", line=dict(dash='dash', color='purple')))
+    
+    fig.update_layout(
+        height=500, 
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- 掃描功能 ---
 if scan_btn:
     st.divider()
     st.subheader("🔎 目前超跌標的 (SD < -1)")
+    bar = st.progress(0)
+    results = []
     
     all_syms = list(STOCKS.values())
-    raw = yf.download(all_syms, period=period, auto_adjust=True, progress=False)['Close']
+    # 批次下載
+    raw_data = yf.download(all_syms, period=period, auto_adjust=True, progress=False)['Close']
     
-    results = []
-    for name, sym in STOCKS.items():
+    for i, (name, sym) in enumerate(STOCKS.items()):
         try:
-            temp_p = raw[sym].dropna()
+            # 處理批次下載可能產生的格式問題
+            temp_p = raw_data[sym].dropna()
+            if len(temp_p) < 100: continue
+            
             y_v = temp_p.values.reshape(-1, 1)
             x_v = np.arange(len(y_v)).reshape(-1, 1)
-            m_v = LinearRegression().fit(x_v, y_v)
-            t_v = m_v.predict(x_v).flatten()
+            model_v = LinearRegression().fit(x_v, y_v)
+            t_v = model_v.predict(x_v).flatten()
             s_v = np.std(y_v.flatten() - t_v)
-            cur_p = float(temp_p.iloc[-1])
-            z_v = (cur_p - t_v[-1]) / s_v
+            
+            # 修正：強制轉 float
+            last_p = float(temp_p.iloc[-1])
+            last_t = float(t_v[-1])
+            z_v = (last_p - last_t) / s_v
             
             if z_v < -1:
-                results.append({"股票": name, "SD": round(z_v, 2), "現價": round(cur_p, 2)})
-        except: continue
-        
+                results.append({
+                    "股票": name, 
+                    "SD": round(float(z_v), 2), 
+                    "現價": round(last_p, 1)
+                })
+        except Exception as e:
+            continue
+        bar.progress((i+1)/len(STOCKS))
+    
     if results:
         st.dataframe(pd.DataFrame(results).sort_values("SD"), use_container_width=True)
     else:
-        st.info("目前無超跌股票。")
+        st.write("目前沒有標的處於低檔。")
